@@ -15,9 +15,11 @@ import getpass
 import threading
 from optparse import OptionParser
 import sleekxmpp
+from sleekxmpp.exceptions import IqError
 from sleekxmpp.xmlstream import ElementBase
 from xml.etree import cElementTree as ET
 
+from atomiclong import AtomicLong
 from ofrestapi.muc import Muc
 
 # Python versions before 3.0 do not use UTF-8 encoding
@@ -31,6 +33,7 @@ else:
     raw_input = input
 
 g_result = [0, 0]  #success, total number
+g_ready = AtomicLong(0)
 
 class XMPPThread(threading.Thread):
     def __init__(self, xmpp):
@@ -45,26 +48,41 @@ class XMPPThread(threading.Thread):
         else:
             print("Unable to connect.")
 
+def check_clusters():
+    muc1 = Muc("http://charles-openfire-1.magnet.com:9090", "Lz4vLf3yE7FrPWGm")
+    rooms1 = muc1.get_rooms()
+    print(rooms1)
+    muc2 = Muc("http://charles-openfire-2.magnet.com:9090", "Lz4vLf3yE7FrPWGm")
+    rooms2 = muc2.get_rooms()
+    print(rooms2)
+    if rooms1 == rooms2:
+        occs1 = muc1.get_room_occupants('12345')
+        occs2 = muc2.get_room_occupants('12345')
+        print("node1: occ#: {} {}".format(len(occs1['occupants']), occs1))
+        print("node2: occ#: {} {}".format(len(occs2['occupants']), occs2))
+        return occs1 == occs2
+    else:
+        return False
+    #print("equal={}".format(rooms1 == rooms2))
+    #time.sleep(2)
+
 class TestThread(threading.Thread):
-    def __init__(self,xmpp):
+    def __init__(self, xmpps):
         threading.Thread.__init__(self)
-        self.xmpp = xmpp
+        self.xmpps = xmpps
 
     def run(self):
-        global g_result
-        muc1 = Muc("http://charles-openfire-1.magnet.com:9090", "Lz4vLf3yE7FrPWGm")
-        rooms1 = muc1.get_rooms()
-        print(rooms1)
-        muc2 = Muc("http://charles-openfire-2.magnet.com:9090", "Lz4vLf3yE7FrPWGm")
-        rooms2 = muc2.get_rooms()
-        print(rooms2)
-        print("equal={}".format(rooms1 == rooms2))
-        g_result[1] = g_result[1] + 1
-        if rooms1 == rooms2:
-            g_result[0] = g_result[0] + 1
-        time.sleep(2)
-        self.xmpp.disconnect()
+        global g_ready
+        while g_ready < len(self.xmpps):
+            time.sleep(3)
 
+        global g_result
+        g_result[1] = g_result[1] + 1
+        if check_clusters():
+            g_result[0] = g_result[0] + 1
+        for xmpp in self.xmpps:
+            xmpp.disconnect()
+        g_ready = 0
 
 class MUCBot(sleekxmpp.ClientXMPP):
 
@@ -74,11 +92,12 @@ class MUCBot(sleekxmpp.ClientXMPP):
     that mentions the bot's nickname.
     """
 
-    def __init__(self, jid, password, room, nick):
+    def __init__(self, jid, password, room, nick, owner=False):
         sleekxmpp.ClientXMPP.__init__(self, jid, password)
 
         self.room = room
         self.nick = nick
+        self.owner = owner
 
         # The session_start event will be triggered when
         # the bot establishes its connection with the server
@@ -168,16 +187,21 @@ class MUCBot(sleekxmpp.ClientXMPP):
         # https://xmpp.org/extensions/xep-0045.html#createroom-instant
         # when room created, it is locked by default
         # below iq unlock the room to allow other clients join
-        query = ET.Element('{http://jabber.org/protocol/muc#owner}query')
-        x = ET.Element('{jabber:x:data}x', type='submit')
-        query.append(x)
-        iq = self.make_iq_set(sub=query, ito=self.room)
-        iq.send(timeout=60)
-        time.sleep(5)
-        print("Ready")
-        # trigger testing thread
-        testT = TestThread(self)
-        testT.start()
+        time.sleep(2)
+        if self.owner:
+            query = ET.Element('{http://jabber.org/protocol/muc#owner}query')
+            x = ET.Element('{jabber:x:data}x', type='submit')
+            query.append(x)
+            iq = self.make_iq_set(sub=query, ito=self.room)
+            try:
+                iq.send(timeout=60)
+            except IqError as e:
+                print(e)
+            time.sleep(3)
+        #print("Ready")
+        global g_ready
+        g_ready += 1
+
 
         if presence['muc']['nick'] != self.nick:
             self.send_message(mto=presence['from'].bare,
@@ -185,19 +209,41 @@ class MUCBot(sleekxmpp.ClientXMPP):
                                                       presence['muc']['nick']),
                               mtype='groupchat')
 
-def test_occupant():
-    xmpp = MUCBot('focus@jitsi-meet-charles.magnet.com', '0D06eLS1', '12345@conference.jitsi-meet-charles.magnet.com', 'focus')
+def start_client(jid, pwd, conf, nick, owner=False):
+    #xmpp = MUCBot('xx@jitsi-meet-charles.magnet.com', '0D06eLS1', '12345@conference.jitsi-meet-charles.magnet.com', 'focus')
+    xmpp = MUCBot(jid, pwd, conf, nick, owner)
     xmpp.register_plugin('xep_0030') # Service Discovery
     xmpp.register_plugin('xep_0045') # Multi-User Chat
     xmpp.register_plugin('xep_0199') # XMPP Ping
 
-    if xmpp.connect():
-        xmpp.process(block=True)
-        #print("Done")
-    else:
-        print("Unable to connect.")
-    #thrd = XMPPThread(xmpp)
-    #thrd.start()
+    thrd = XMPPThread(xmpp)
+    thrd.start()
+    return xmpp
+
+def test_occupant():
+    global g_result
+    global g_ready
+    xmpps = []
+    xc = start_client('xx@jitsi-meet-charles.magnet.com', '', '12345@conference.jitsi-meet-charles.magnet.com', 'aaa', True)
+    xmpps.append(xc)
+
+    while g_ready < 1:
+        time.sleep(1)
+
+    xc = start_client('xx@jitsi-meet-charles.magnet.com', '', '12345@conference.jitsi-meet-charles.magnet.com', 'bbb')
+    xmpps.append(xc)
+
+    while g_ready < len(xmpps):
+        time.sleep(1)
+
+    g_result[1] = g_result[1] + 1
+    if check_clusters():
+        g_result[0] = g_result[0] + 1
+
+    #time.sleep(300)
+    for xmpp in xmpps:
+        xmpp.disconnect()
+        g_ready = 0
 
 
 if __name__ == '__main__':
@@ -241,7 +287,7 @@ if __name__ == '__main__':
     if opts.nick is None:
         opts.nick = raw_input("MUC nickname: ")
     '''
-    for i in range(20):
+    for i in range(10):
         test_occupant()
         print("Testing succeed: {}/{}".format(g_result[0], g_result[1]))
-    
+
