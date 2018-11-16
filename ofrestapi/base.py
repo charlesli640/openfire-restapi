@@ -54,7 +54,7 @@ class Base(object):
             try:
                 return r.json()
             except:
-                return True
+                return r.content
         else:
             try:
                 exception = r.json()['exception']

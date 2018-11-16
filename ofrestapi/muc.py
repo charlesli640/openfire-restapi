@@ -50,6 +50,28 @@ class Muc(Base):
         params = {'servicename': servicename}
         return self._submit_request(get, endpoint, params=params)
 
+    def get_room_participants(self, roomname, servicename='conference'):
+        """
+        Retrieve chat room participants
+
+        :param roomname: The exact chat room name for request
+        :param servicename: (optional) The name of the Group Chat Service. Default: `conference`
+        """
+        endpoint = '/'.join([self.endpoint, roomname, 'participants'])
+        params = {'servicename': servicename}
+        return self._submit_request(get, endpoint, params=params)
+
+    def get_room_occupants(self, roomname, servicename='conference'):
+        """
+        Retrieve chat room occupants
+
+        :param roomname: The exact chat room name for request
+        :param servicename: (optional) The name of the Group Chat Service. Default: `conference`
+        """
+        endpoint = '/'.join([self.endpoint, roomname, 'occupants'])
+        params = {'servicename': servicename}
+        return self._submit_request(get, endpoint, params=params)
+
     def add_room(self, roomname, name, description, servicename='conference',
                  subject=None, password=None, maxusers=0, persistent=True,
                  public=True, registration=True, visiblejids=True, changesubject=False,
