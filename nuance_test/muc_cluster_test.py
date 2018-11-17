@@ -35,6 +35,12 @@ else:
 g_result = [0, 0]  #success, total number
 g_ready = AtomicLong(0)
 
+xmpp_domain = "jitsi-meet-charles.magnet.com"
+openfire_node_1 = "http://charles-openfire-1.magnet.com:9090"
+openfire_node_2 = "http://charles-openfire-2.magnet.com:9090"
+openfire_shared_key = "Lz4vLf3yE7FrPWGm"
+room_name = "12345"
+
 class XMPPThread(threading.Thread):
     def __init__(self, xmpp):
         threading.Thread.__init__(self)
@@ -49,22 +55,27 @@ class XMPPThread(threading.Thread):
             print("Unable to connect.")
 
 def check_clusters():
-    muc1 = Muc("http://charles-openfire-1.magnet.com:9090", "Lz4vLf3yE7FrPWGm")
+    global openfire_node_1, openfire_node_2, openfire_shared_key, room_name
+    muc1 = Muc(openfire_node_1, openfire_shared_key)
     rooms1 = muc1.get_rooms()
-    print(rooms1)
-    muc2 = Muc("http://charles-openfire-2.magnet.com:9090", "Lz4vLf3yE7FrPWGm")
+    #print(rooms1)
+    muc2 = Muc(openfire_node_2, openfire_shared_key)
     rooms2 = muc2.get_rooms()
-    print(rooms2)
     if rooms1 == rooms2:
-        occs1 = muc1.get_room_occupants('12345')
-        occs2 = muc2.get_room_occupants('12345')
-        print("node1: occ#: {} {}".format(len(occs1['occupants']), occs1))
-        print("node2: occ#: {} {}".format(len(occs2['occupants']), occs2))
-        return occs1 == occs2
+        occs1 = muc1.get_room_occupants(room_name)
+        occs2 = muc2.get_room_occupants(room_name)
+        if occs1 == occs2 and len(occs1['occupants']) == 2:
+            return True
+        else:
+            print("occupants do not match")
+            print("node1: occ#: {} {}".format(len(occs1['occupants']), occs1))
+            print("node2: occ#: {} {}".format(len(occs2['occupants']), occs2))
+            return False
     else:
+        print("rooms do not match")
+        print("node1: {}".format(rooms1))
+        print("node2: {}".format(rooms2))
         return False
-    #print("equal={}".format(rooms1 == rooms2))
-    #time.sleep(2)
 
 class TestThread(threading.Thread):
     def __init__(self, xmpps):
@@ -210,7 +221,6 @@ class MUCBot(sleekxmpp.ClientXMPP):
                               mtype='groupchat')
 
 def start_client(jid, pwd, conf, nick, owner=False):
-    #xmpp = MUCBot('xx@jitsi-meet-charles.magnet.com', '0D06eLS1', '12345@conference.jitsi-meet-charles.magnet.com', 'focus')
     xmpp = MUCBot(jid, pwd, conf, nick, owner)
     xmpp.register_plugin('xep_0030') # Service Discovery
     xmpp.register_plugin('xep_0045') # Multi-User Chat
@@ -223,14 +233,16 @@ def start_client(jid, pwd, conf, nick, owner=False):
 def test_occupant():
     global g_result
     global g_ready
+    global xmpp_domain
+    global room_name
     xmpps = []
-    xc = start_client('xx@jitsi-meet-charles.magnet.com', '', '12345@conference.jitsi-meet-charles.magnet.com', 'aaa', True)
+    xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room_name, xmpp_domain), 'aaa', True)
     xmpps.append(xc)
 
     while g_ready < 1:
         time.sleep(1)
 
-    xc = start_client('xx@jitsi-meet-charles.magnet.com', '', '12345@conference.jitsi-meet-charles.magnet.com', 'bbb')
+    xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room_name, xmpp_domain), 'bbb')
     xmpps.append(xc)
 
     while g_ready < len(xmpps):
@@ -279,13 +291,9 @@ if __name__ == '__main__':
 
     '''
     if opts.jid is None:
-        opts.jid = raw_input("Username: ")
+        opts.jid = raw_input("XMPP Domain: ")
     if opts.password is None:
-        opts.password = getpass.getpass("Password: ")
-    if opts.room is None:
-        opts.room = raw_input("MUC room: ")
-    if opts.nick is None:
-        opts.nick = raw_input("MUC nickname: ")
+        opts.password = getpass.getpass("Room Name: ")
     '''
     for i in range(10):
         test_occupant()
