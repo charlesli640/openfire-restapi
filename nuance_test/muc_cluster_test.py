@@ -9,7 +9,7 @@
     See the file LICENSE for copying permission.
 """
 
-import sys, time
+import sys, time, datetime
 import logging
 import getpass
 import threading
@@ -59,7 +59,7 @@ class XMPPThread(threading.Thread):
         # Connect to the XMPP server and start processing XMPP stanzas.
         if self.xmpp.connect():
             self.xmpp.process(block=True)
-            print("Done")
+            #print("Done")
         else:
             print("Unable to connect.")
 
@@ -339,7 +339,10 @@ def main():
         loop = opts.loop
     for i in range(loop):
         test_occupant()
-        print("Testing succeed: {}/{}".format(g_result[0], g_result[1]))
+        print("{} Testing succeed: {}/{}".format(datetime.datetime.now(), g_result[0], g_result[1]))
 
 if __name__ == '__main__':
     main()
+    # Using nohup command to execute on background without terminal connection
+    # nohup python3 -u muc_cluster_test.py -l 1000 > output.res 2 > output.err
+        
