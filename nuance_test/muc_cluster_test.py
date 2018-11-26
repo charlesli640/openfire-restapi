@@ -13,7 +13,8 @@ import sys, time
 import logging
 import getpass
 import threading
-from optparse import OptionParser
+#from optparse import OptionParser
+import argparse
 import sleekxmpp
 from sleekxmpp.exceptions import IqError
 from sleekxmpp.xmlstream import ElementBase
@@ -35,11 +36,19 @@ else:
 g_result = [0, 0]  #success, total number
 g_ready = AtomicLong(0)
 
-xmpp_domain = "jitsi-meet-charles.magnet.com"
-openfire_node_1 = "http://charles-openfire-1.magnet.com:9090"
-openfire_node_2 = "http://charles-openfire-2.magnet.com:9090"
-openfire_shared_key = "Lz4vLf3yE7FrPWGm"
+#xmpp_domain = "jitsi-meet-charles.magnet.com"
+#openfire_nodes = [
+#       "http://charles-openfire-1.magnet.com:9090",
+#        "http://charles-openfire-2.magnet.com:9090" ]
+#openfire_shared_key = "Lz4vLf3yE7FrPWGm"
+
 room_name = "12345"
+xmpp_domain = "nuancejitsi.magnet.com"
+openfire_nodes = [
+    "http://nuancejitsi-openfire-1.magnet.com:9090", 
+    "http://nuancejitsi-openfire-2.magnet.com:9090" ]
+
+openfire_shared_key = "C27RXhWKFw5dvAHT"
 
 class XMPPThread(threading.Thread):
     def __init__(self, xmpp):
@@ -55,26 +64,46 @@ class XMPPThread(threading.Thread):
             print("Unable to connect.")
 
 def check_clusters():
-    global openfire_node_1, openfire_node_2, openfire_shared_key, room_name
-    muc1 = Muc(openfire_node_1, openfire_shared_key)
-    rooms1 = muc1.get_rooms()
-    #print(rooms1)
-    muc2 = Muc(openfire_node_2, openfire_shared_key)
-    rooms2 = muc2.get_rooms()
-    if rooms1 == rooms2:
-        occs1 = muc1.get_room_occupants(room_name)
-        occs2 = muc2.get_room_occupants(room_name)
-        if occs1 == occs2 and len(occs1['occupants']) == 2:
+
+    global openfire_nodes, openfire_shared_key, room_name
+    if len (openfire_nodes) <= 0:
+        print("Need cluster node > 0")
+        return False
+  
+    mucs = []
+    roomss = []
+    for node in openfire_nodes:
+        muc = Muc(node, openfire_shared_key)
+        # possible exception here
+        rooms = muc.get_rooms()
+        mucs.append(muc)
+        roomss.append(rooms)
+        #print(rooms)
+
+    if len(roomss) == len(openfire_nodes) and \
+        all(v == roomss[0] for v in roomss):
+        occs = []
+        for muc in mucs:
+            # possible exception here
+            oc = muc.get_room_occupants(room_name)
+            occs.append(oc)
+
+        if len(occs) == len(openfire_nodes) and \
+            all(len(occ['occupants']) == 2 and occ == occs[0] for occ in occs):
             return True
         else:
-            print("occupants do not match")
-            print("node1: occ#: {} {}".format(len(occs1['occupants']), occs1))
-            print("node2: occ#: {} {}".format(len(occs2['occupants']), occs2))
+            print("occupants do not match or the count of occupants is not correct")
+            i = 0
+            for occ in occs:
+                print("node{}: occ#: {} {}".format(i, len(occ['occupants']), occ))
+                i += 1
             return False
     else:
         print("rooms do not match")
-        print("node1: {}".format(rooms1))
-        print("node2: {}".format(rooms2))
+        i = 0
+        for rooms in roomss:
+            print("node{}: {}".format(i, rooms))
+            i += 1
         return False
 
 class TestThread(threading.Thread):
@@ -175,10 +204,12 @@ class MUCBot(sleekxmpp.ClientXMPP):
                    for stanza objects and the Message stanza to see
                    how it may be used.
         """
+        """
         if msg['mucnick'] != self.nick and self.nick in msg['body']:
             self.send_message(mto=msg['from'].bare,
                               mbody="I heard that, %s." % msg['mucnick'],
                               mtype='groupchat')
+        """
 
     def muc_online(self, presence):
         """
@@ -257,45 +288,58 @@ def test_occupant():
         xmpp.disconnect()
         g_ready = 0
 
-
-if __name__ == '__main__':
+def main():
     # Setup the command line arguments.
-    optp = OptionParser()
+    optp = argparse.ArgumentParser()
 
     # Output verbosity options.
-    optp.add_option('-q', '--quiet', help='set logging to ERROR',
+    optp.add_argument('-q', '--quiet', help='set logging to ERROR',
                     action='store_const', dest='loglevel',
                     const=logging.ERROR, default=logging.INFO)
-    optp.add_option('-d', '--debug', help='set logging to DEBUG',
+    optp.add_argument('-d', '--debug', help='set logging to DEBUG',
                     action='store_const', dest='loglevel',
                     const=logging.DEBUG, default=logging.INFO)
-    optp.add_option('-v', '--verbose', help='set logging to COMM',
+    optp.add_argument('-v', '--verbose', help='set logging to COMM',
                     action='store_const', dest='loglevel',
                     const=5, default=logging.INFO)
 
-    # JID and password options.
-    optp.add_option("-j", "--jid", dest="jid",
-                    help="JID to use")
-    optp.add_option("-p", "--password", dest="password",
-                    help="password to use")
-    optp.add_option("-r", "--room", dest="room",
+    # XMPP domain and room options.
+    optp.add_argument("-m", "--domain", dest="domain",
+                    help="XMPP domain")
+    optp.add_argument("-r", "--room", dest="room",
                     help="MUC room to join")
-    optp.add_option("-n", "--nick", dest="nick",
-                    help="MUC nickname")
+    optp.add_argument("-n", "--nodes", dest="nodes", action="append", default=[],
+                    help="Openfire Nodes")
+    optp.add_argument("-k", "--key", dest="key",
+                    help="Openfire shared key")
+    optp.add_argument("-l", "--loop", dest="loop", type=int,
+                    help="Loops of execution")
 
-    opts, args = optp.parse_args()
+    opts = optp.parse_args()
 
     # Setup logging.
     logging.basicConfig(level=opts.loglevel,
                         format='%(levelname)-8s %(message)s')
 
-    '''
-    if opts.jid is None:
-        opts.jid = raw_input("XMPP Domain: ")
-    if opts.password is None:
-        opts.password = getpass.getpass("Room Name: ")
-    '''
-    for i in range(10):
+    global xmpp_domain
+    global room_name
+    global openfire_nodes
+    global openfire_shared_key
+
+    if opts.domain is not None:
+        xmpp_domain = opts.domain
+    if opts.room is not None:
+        room_name = opts.room
+    if opts.nodes is not None and len(opts.nodes) > 0:
+        openfire_nodes = opts.nodes
+    if opts.key is not None:
+        openfire_shared_key = opts.key
+    loop = 10
+    if opts.loop is not None:
+        loop = opts.loop
+    for i in range(loop):
         test_occupant()
         print("Testing succeed: {}/{}".format(g_result[0], g_result[1]))
 
+if __name__ == '__main__':
+    main()
