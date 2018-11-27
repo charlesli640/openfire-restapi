@@ -9,7 +9,7 @@
     See the file LICENSE for copying permission.
 """
 
-import sys, time, datetime
+import sys, time, datetime, string, random
 import logging
 import getpass
 import threading
@@ -42,7 +42,8 @@ g_ready = AtomicLong(0)
 #        "http://charles-openfire-2.magnet.com:9090" ]
 #openfire_shared_key = "Lz4vLf3yE7FrPWGm"
 
-room_name = "12345"
+# by default, using random room name every time
+room_name = ""
 xmpp_domain = "nuancejitsi.magnet.com"
 openfire_nodes = [
     "http://nuancejitsi-openfire-1.magnet.com:9090", 
@@ -63,9 +64,9 @@ class XMPPThread(threading.Thread):
         else:
             print("Unable to connect.")
 
-def check_clusters():
+def check_clusters(roomname):
 
-    global openfire_nodes, openfire_shared_key, room_name
+    global openfire_nodes, openfire_shared_key
     if len (openfire_nodes) <= 0:
         print("Need cluster node > 0")
         return False
@@ -85,7 +86,7 @@ def check_clusters():
         occs = []
         for muc in mucs:
             # possible exception here
-            oc = muc.get_room_occupants(room_name)
+            oc = muc.get_room_occupants(roomname)
             occs.append(oc)
 
         if len(occs) == len(openfire_nodes) and \
@@ -105,24 +106,6 @@ def check_clusters():
             print("node{}: {}".format(i, rooms))
             i += 1
         return False
-
-class TestThread(threading.Thread):
-    def __init__(self, xmpps):
-        threading.Thread.__init__(self)
-        self.xmpps = xmpps
-
-    def run(self):
-        global g_ready
-        while g_ready < len(self.xmpps):
-            time.sleep(3)
-
-        global g_result
-        g_result[1] = g_result[1] + 1
-        if check_clusters():
-            g_result[0] = g_result[0] + 1
-        for xmpp in self.xmpps:
-            xmpp.disconnect()
-        g_ready = 0
 
 class MUCBot(sleekxmpp.ClientXMPP):
 
@@ -234,6 +217,7 @@ class MUCBot(sleekxmpp.ClientXMPP):
             query = ET.Element('{http://jabber.org/protocol/muc#owner}query')
             x = ET.Element('{jabber:x:data}x', type='submit')
             query.append(x)
+            #print("!!!!!Charles !!!! room name: {}".format(self.room))
             iq = self.make_iq_set(sub=query, ito=self.room)
             try:
                 iq.send(timeout=60)
@@ -261,26 +245,28 @@ def start_client(jid, pwd, conf, nick, owner=False):
     thrd.start()
     return xmpp
 
-def test_occupant():
+def test_occupant(room):
     global g_result
     global g_ready
     global xmpp_domain
-    global room_name
     xmpps = []
-    xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room_name, xmpp_domain), 'aaa', True)
+    N = 10
+    if not room:
+        room = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(N)) # randomly create
+    xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room, xmpp_domain), 'aaa', True)
     xmpps.append(xc)
 
     while g_ready < 1:
         time.sleep(1)
 
-    xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room_name, xmpp_domain), 'bbb')
+    xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room, xmpp_domain), 'bbb')
     xmpps.append(xc)
 
     while g_ready < len(xmpps):
         time.sleep(1)
 
     g_result[1] = g_result[1] + 1
-    if check_clusters():
+    if check_clusters(room):
         g_result[0] = g_result[0] + 1
 
     #time.sleep(300)
@@ -338,7 +324,7 @@ def main():
     if opts.loop is not None:
         loop = opts.loop
     for i in range(loop):
-        test_occupant()
+        test_occupant(room_name)
         print("{} Testing succeed: {}/{}".format(datetime.datetime.now(), g_result[0], g_result[1]))
 
 if __name__ == '__main__':
