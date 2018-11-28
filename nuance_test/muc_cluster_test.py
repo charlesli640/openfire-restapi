@@ -272,7 +272,7 @@ def test_occupant(room):
     #time.sleep(300)
     for xmpp in xmpps:
         xmpp.disconnect()
-        g_ready = 0
+    g_ready = 0
 
 def main():
     # Setup the command line arguments.
