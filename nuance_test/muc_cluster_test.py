@@ -245,7 +245,7 @@ def start_client(jid, pwd, conf, nick, owner=False):
     thrd.start()
     return xmpp
 
-def test_occupant(room):
+def test_occupant(room, i):
     global g_result
     global g_ready
     global xmpp_domain
@@ -253,6 +253,7 @@ def test_occupant(room):
     N = 10
     if not room:
         room = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(N)) # randomly create
+        room += '_{}'.format(i)
     xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room, xmpp_domain), 'aaa', True)
     xmpps.append(xc)
 
@@ -324,7 +325,7 @@ def main():
     if opts.loop is not None:
         loop = opts.loop
     for i in range(loop):
-        test_occupant(room_name)
+        test_occupant(room_name, i)
         print("{} Testing succeed: {}/{}".format(datetime.datetime.now(), g_result[0], g_result[1]))
 
 if __name__ == '__main__':
