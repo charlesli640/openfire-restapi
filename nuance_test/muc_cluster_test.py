@@ -194,6 +194,20 @@ class MUCBot(sleekxmpp.ClientXMPP):
                               mtype='groupchat')
         """
 
+    def unlock_room(self):
+        query = ET.Element('{http://jabber.org/protocol/muc#owner}query')
+        x = ET.Element('{jabber:x:data}x', type='submit')
+        query.append(x)
+        #print("!!!!!Charles !!!! room name: {}".format(self.room))
+        iq = self.make_iq_set(sub=query, ito=self.room)
+        try:
+            iq.send(timeout=60)
+            ret = True
+        except IqError as e:
+            print(e)
+            ret = False
+        return ret
+
     def muc_online(self, presence):
         """
         Process a presence stanza from a chat room. In this case,
@@ -214,20 +228,19 @@ class MUCBot(sleekxmpp.ClientXMPP):
         # below iq unlock the room to allow other clients join
         time.sleep(2)
         if self.owner:
-            query = ET.Element('{http://jabber.org/protocol/muc#owner}query')
-            x = ET.Element('{jabber:x:data}x', type='submit')
-            query.append(x)
-            #print("!!!!!Charles !!!! room name: {}".format(self.room))
-            iq = self.make_iq_set(sub=query, ito=self.room)
-            try:
-                iq.send(timeout=60)
-            except IqError as e:
-                print(e)
-            time.sleep(3)
-        #print("Ready")
+            retryR = 2
+            sucUnlock = False
+            while retryR > 0 and not sucUnlock:
+                sucUnlock = self.unlock_room()
+                if not sucUnlock:
+                    print("Not successfully unlock the room, retry: {} remaining".format(retryR))
+                    retryR -= 1
+                    time.sleep(3)
+            if not sucUnlock:
+                print("Unlock room failed")
+
         global g_ready
         g_ready += 1
-
 
         if presence['muc']['nick'] != self.nick:
             self.send_message(mto=presence['from'].bare,
