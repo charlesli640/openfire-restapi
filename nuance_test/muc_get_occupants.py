@@ -34,22 +34,13 @@ else:
     raw_input = input
 
 g_result = [0, 0]  #success, total number
-g_ready = AtomicLong(0)
+#g_ready = AtomicLong(0)
 
-xmpp_domain = "jitsi-meet-charles.magnet.com"
-openfire_nodes = [
-       "http://charles-openfire-1.magnet.com:9090",
-        "http://charles-openfire-2.magnet.com:9090" ]
-openfire_shared_key = "Lz4vLf3yE7FrPWGm"
+#xmpp_domain = "jitsi-meet-charles.magnet.com"
 
 # by default, using random room name every time
-room_name = ""
-#xmpp_domain = "nuancejitsi.magnet.com"
-#openfire_nodes = [
-#    "http://nuancejitsi-openfire-1.magnet.com:9090", 
-#    "http://nuancejitsi-openfire-2.magnet.com:9090" ]
-
-#openfire_shared_key = "C27RXhWKFw5dvAHT"
+room_name = "test1"
+xmpp_domain = "jitsimeet.magnet.com"
 
 class XMPPThread(threading.Thread):
     def __init__(self, xmpp):
@@ -64,48 +55,6 @@ class XMPPThread(threading.Thread):
         else:
             print("Unable to connect.")
 
-def check_clusters(roomname):
-
-    global openfire_nodes, openfire_shared_key
-    if len (openfire_nodes) <= 0:
-        print("Need cluster node > 0")
-        return False
-  
-    mucs = []
-    roomss = []
-    for node in openfire_nodes:
-        muc = Muc(node, openfire_shared_key)
-        # possible exception here
-        rooms = muc.get_rooms()
-        mucs.append(muc)
-        roomss.append(rooms)
-        #print(rooms)
-
-    if len(roomss) == len(openfire_nodes) and \
-        all(v == roomss[0] for v in roomss):
-        occs = []
-        for muc in mucs:
-            # possible exception here
-            oc = muc.get_room_occupants(roomname)
-            occs.append(oc)
-
-        if len(occs) == len(openfire_nodes) and \
-            all(len(occ['occupants']) == 2 and occ == occs[0] for occ in occs):
-            return True
-        else:
-            print("occupants do not match or the count of occupants is not correct")
-            i = 0
-            for occ in occs:
-                print("node{}: occ#: {} {}".format(i, len(occ['occupants']), occ))
-                i += 1
-            return False
-    else:
-        print("rooms do not match")
-        i = 0
-        for rooms in roomss:
-            print("node{}: {}".format(i, rooms))
-            i += 1
-        return False
 
 class MUCBot(sleekxmpp.ClientXMPP):
 
@@ -194,12 +143,8 @@ class MUCBot(sleekxmpp.ClientXMPP):
                               mtype='groupchat')
         """
 
-    def unlock_room(self):
-        query = ET.Element('{http://jabber.org/protocol/muc#owner}query')
-        x = ET.Element('{jabber:x:data}x', type='submit')
-        query.append(x)
-        #print("!!!!!Charles !!!! room name: {}".format(self.room))
-        iq = self.make_iq_set(sub=query, ito=self.room)
+    def get_occupants(self):
+        iq = self.make_iq_get(queryxmlns='http://jabber.org/protocol/disco#items', ito=self.room)
         try:
             iq.send(timeout=60)
             ret = True
@@ -226,22 +171,6 @@ class MUCBot(sleekxmpp.ClientXMPP):
         # https://xmpp.org/extensions/xep-0045.html#createroom-instant
         # when room created, it is locked by default
         # below iq unlock the room to allow other clients join
-        time.sleep(2)
-        if self.owner:
-            retryR = 2
-            sucUnlock = False
-            while retryR > 0 and not sucUnlock:
-                sucUnlock = self.unlock_room()
-                if not sucUnlock:
-                    print("Not successfully unlock the room, retry: {} remaining".format(retryR))
-                    retryR -= 1
-                    time.sleep(3)
-            if not sucUnlock:
-                print("Unlock room failed")
-
-        global g_ready
-        g_ready += 1
-
         if presence['muc']['nick'] != self.nick:
             self.send_message(mto=presence['from'].bare,
                               mbody="Hello, %s %s" % (presence['muc']['role'],
@@ -258,35 +187,16 @@ def start_client(jid, pwd, conf, nick, owner=False):
     thrd.start()
     return xmpp
 
-def test_occupant(room, i):
-    global g_result
-    global g_ready
+def test_get_occupants(room):
     global xmpp_domain
-    xmpps = []
-    N = 10
     if not room:
-        room = ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(N)) # randomly create
-        room += '_{}'.format(i)
-    xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room, xmpp_domain), 'aaa', True)
-    xmpps.append(xc)
-
-    while g_ready < 1:
-        time.sleep(1)
-
-    xc = start_client("xx@{}".format(xmpp_domain), '', "{}@conference.{}".format(room, xmpp_domain), 'bbb')
-    xmpps.append(xc)
-
-    while g_ready < len(xmpps):
-        time.sleep(1)
-
-    g_result[1] = g_result[1] + 1
-    if check_clusters(room):
-        g_result[0] = g_result[0] + 1
-
-    #time.sleep(300)
-    for xmpp in xmpps:
-        xmpp.disconnect()
-    g_ready = 0
+        print("room cannot be None")
+        return None
+    xc = start_client("recorder@{}".format(xmpp_domain), 'jibrirecorderpass', "{}@conference.{}".format(room, xmpp_domain), 'recorder', True)
+    time.sleep(10)
+    ol = xc.get_occupants()
+    time.sleep(100)
+    xc.disconnect()
 
 def main():
     # Setup the command line arguments.
@@ -308,12 +218,6 @@ def main():
                     help="XMPP domain")
     optp.add_argument("-r", "--room", dest="room",
                     help="MUC room to join")
-    optp.add_argument("-n", "--nodes", dest="nodes", action="append", default=[],
-                    help="Openfire Nodes")
-    optp.add_argument("-k", "--key", dest="key",
-                    help="Openfire shared key")
-    optp.add_argument("-l", "--loop", dest="loop", type=int,
-                    help="Loops of execution")
 
     opts = optp.parse_args()
 
@@ -323,23 +227,13 @@ def main():
 
     global xmpp_domain
     global room_name
-    global openfire_nodes
-    global openfire_shared_key
 
     if opts.domain is not None:
         xmpp_domain = opts.domain
     if opts.room is not None:
         room_name = opts.room
-    if opts.nodes is not None and len(opts.nodes) > 0:
-        openfire_nodes = opts.nodes
-    if opts.key is not None:
-        openfire_shared_key = opts.key
-    loop = 10
-    if opts.loop is not None:
-        loop = opts.loop
-    for i in range(loop):
-        test_occupant(room_name, i)
-        print("{} Testing succeed: {}/{}".format(datetime.datetime.now(), g_result[0], g_result[1]))
+    test_get_occupants(room_name)
+    
 
 if __name__ == '__main__':
     main()
