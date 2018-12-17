@@ -20,9 +20,6 @@ from sleekxmpp.exceptions import IqError
 from sleekxmpp.xmlstream import ElementBase
 from xml.etree import cElementTree as ET
 
-from atomiclong import AtomicLong
-from ofrestapi.muc import Muc
-
 # Python versions before 3.0 do not use UTF-8 encoding
 # by default. To ensure that Unicode is handled properly
 # throughout SleekXMPP, we will set the default encoding
@@ -33,14 +30,11 @@ if sys.version_info < (3, 0):
 else:
     raw_input = input
 
-g_result = [0, 0]  #success, total number
-#g_ready = AtomicLong(0)
-
 #xmpp_domain = "jitsi-meet-charles.magnet.com"
+xmpp_domain = "jitsimeet.magnet.com"
 
 # by default, using random room name every time
 room_name = "test1"
-xmpp_domain = "jitsimeet.magnet.com"
 
 class XMPPThread(threading.Thread):
     def __init__(self, xmpp):
@@ -193,9 +187,9 @@ def test_get_occupants(room):
         print("room cannot be None")
         return None
     xc = start_client("recorder@{}".format(xmpp_domain), 'jibrirecorderpass', "{}@conference.{}".format(room, xmpp_domain), 'recorder', True)
-    time.sleep(10)
+    time.sleep(10)  # Allow some time to let recorder login
     ol = xc.get_occupants()
-    time.sleep(100)
+    time.sleep(100) # Allow some time to let user check from openfire admin console
     xc.disconnect()
 
 def main():
